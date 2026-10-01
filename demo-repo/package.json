@@ -1,0 +1,11 @@
+{
+  "name": "demo-repo",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "test": "jest --passWithNoTests"
+  },
+  "devDependencies": {
+    "jest": "^29.0.0"
+  }
+}

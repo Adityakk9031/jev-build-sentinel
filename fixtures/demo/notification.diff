@@ -1,0 +1,13 @@
+diff --git a/src/notifications/notifier.ts b/src/notifications/notifier.ts
+index 111..222 100644
+--- a/src/notifications/notifier.ts
++++ b/src/notifications/notifier.ts
+@@ -1,3 +1,5 @@
+ export function notify(user: string, message: string): string {
+-  return `[${user}] ${message}`;
++  return `[to:${user}] ${message}`;
+ }
++
++export function notifyAll(users: string[], message: string): string[] {
++  return users.map((u) => notify(u, message));
++}

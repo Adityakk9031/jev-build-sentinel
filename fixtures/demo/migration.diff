@@ -1,0 +1,11 @@
+diff --git a/db/migrations/004_add_refunds.sql b/db/migrations/004_add_refunds.sql
+new file mode 100644
+index 000..111
+--- /dev/null
++++ b/db/migrations/004_add_refunds.sql
+@@ -0,0 +1,5 @@
++CREATE TABLE refunds (
++  id BIGSERIAL PRIMARY KEY,
++  charge_id TEXT NOT NULL,
++  amount_cents INTEGER NOT NULL
++);

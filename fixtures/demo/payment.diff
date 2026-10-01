@@ -1,0 +1,11 @@
+diff --git a/src/payments/stripe.ts b/src/payments/stripe.ts
+index 111..222 100644
+--- a/src/payments/stripe.ts
++++ b/src/payments/stripe.ts
+@@ -2,5 +2,6 @@ const TAX_RATE = 0.08;
+ export function computeTotal(items: Array<{ price: number; qty: number }>): number {
+   const subtotal = items.reduce((acc, i) => acc + i.price * i.qty, 0);
+-  return subtotal;
++  const tax = subtotal * TAX_RATE;
++  return Math.round(subtotal * (1 + TAX_RATE) * 100) / 100;
+ }

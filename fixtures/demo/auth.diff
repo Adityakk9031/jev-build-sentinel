@@ -1,0 +1,13 @@
+diff --git a/src/auth/session.ts b/src/auth/session.ts
+index 111..222 100644
+--- a/src/auth/session.ts
++++ b/src/auth/session.ts
+@@ -4,4 +4,7 @@ export function createSession(userId: string): { token: string; userId: string }
+ export function validateSession(token: string): boolean {
+-  return token.length > 0;
++  return token.startsWith('tok_');
+ }
++
++export function destroySession(token: string): void {
++  void token;
++}
