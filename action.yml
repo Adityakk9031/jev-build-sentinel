@@ -1,0 +1,66 @@
+name: 'Jev Build Sentinel'
+description: >-
+  Intelligently selects the minimum safe amount of CI verification for a pull
+  request. Jev is the primary decision engine; a deterministic safety policy
+  always escalates to full CI when uncertain.
+author: 'Jev'
+branding:
+  icon: 'shield'
+  color: 'blue'
+
+inputs:
+  github-token:
+    description: 'GitHub token used to read the PR diff.'
+    required: false
+    default: ${{ github.token }}
+  jev-endpoint:
+    description: 'Base URL of the Jev inference API (e.g. https://jev.example.com/v1).'
+    required: true
+  jev-api-key:
+    description: 'API key for the Jev inference API. Never logged.'
+    required: false
+    default: ''
+  mode:
+    description: 'Operating mode: decide (default), or execute to also run the selected tests.'
+    required: false
+    default: 'decide'
+  confidence-threshold:
+    description: 'Minimum Jev confidence before the safety policy forces FULL.'
+    required: false
+    default: '0.7'
+  timeout-ms:
+    description: 'Timeout in milliseconds for the Jev API request.'
+    required: false
+    default: '10000'
+  retries:
+    description: 'Number of retries for the Jev API request on transient failure.'
+    required: false
+    default: '2'
+  execute-tests:
+    description: 'If true, run the selected tests for TARGETED and the normal suite for FULL.'
+    required: false
+    default: 'false'
+  working-directory:
+    description: 'Repository root used for test mapping and execution.'
+    required: false
+    default: '.'
+
+outputs:
+  decision:
+    description: 'SKIP, TARGETED, or FULL.'
+  risk_score:
+    description: 'Risk score returned by Jev (0..1).'
+  confidence:
+    description: 'Decision confidence returned by Jev (0..1).'
+  selected_tests:
+    description: 'Space-separated list of selected test files.'
+  tests_skipped:
+    description: 'Number of candidate tests skipped.'
+  reason:
+    description: 'Human-readable explanation of the decision.'
+  fallback_used:
+    description: 'true when the safety policy overrode Jev or a fallback was applied.'
+
+runs:
+  using: 'node20'
+  main: 'dist/index.js'
