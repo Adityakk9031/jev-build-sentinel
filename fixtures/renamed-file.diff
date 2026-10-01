@@ -1,0 +1,16 @@
+diff --git a/src/notifications/notify.ts b/src/notifications/notifier.ts
+similarity index 87%
+rename from src/notifications/notify.ts
+rename to src/notifications/notifier.ts
+index 7777777..8888888 100644
+--- a/src/notifications/notify.ts
++++ b/src/notifications/notifier.ts
+@@ -2,4 +2,5 @@ export function notify(user: string): void {
+   queue.push(user);
+ }
+ 
++export function notifyAll(users: string[]): void {
++  users.forEach(notify);
++}
+ 
+ export function flush(): void {

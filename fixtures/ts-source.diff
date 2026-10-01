@@ -1,0 +1,13 @@
+diff --git a/src/payment/stripe.ts b/src/payment/stripe.ts
+index aaaaaaa..bbbbbbb 100644
+--- a/src/payment/stripe.ts
++++ b/src/payment/stripe.ts
+@@ -12,7 +12,10 @@ export function computeTotal(items: Item[]): number {
+-  return subtotal;
++  const tax = subtotal * TAX_RATE;
++  return subtotal + tax;
+ }
+ 
+ export function refund(chargeId: string): Promise<void> {
+-  return api.delete(`/charges/${chargeId}`);
++  return api.post(`/refunds`, { charge: chargeId });

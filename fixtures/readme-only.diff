@@ -1,0 +1,15 @@
+diff --git a/README.md b/README.md
+index 1111111..2222222 100644
+--- a/README.md
++++ b/README.md
+@@ -1,4 +1,5 @@
+ # Demo
++Updated instructions for local setup.
+ 
+ ## Install
+ 
+@@ -10,3 +11,4 @@ Run `npm install`.
+ 
+ ## License
+ MIT
++See LICENSE file for details.
