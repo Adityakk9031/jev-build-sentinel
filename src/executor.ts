@@ -33,6 +33,20 @@ function runScriptName(framework: 'jest' | 'vitest'): string {
   return framework === 'vitest' ? 'vitest run' : 'jest';
 }
 
+/** Resolves the two overlapping execution inputs: `mode` and `execute-tests`. */
+export function shouldExecuteTests(mode: string | undefined, executeTests: boolean): boolean {
+  return executeTests || mode === 'execute';
+}
+
+export type CommandRunner = (
+  command: string,
+  cwd: string,
+  timeoutMs?: number,
+) => Promise<{ code: number; stdout: string; stderr: string }>;
+
+/** Upper bound on per-test runs used to attribute a failed targeted batch. */
+export const MAX_ATTRIBUTION_RUNS = 12;
+
 /**
  * Execute tests according to the decision.
  * - TARGETED: run only selected tests; if that fails because tests cannot run
@@ -45,8 +59,11 @@ export async function executeTests(opts: {
   selectedTests: string[];
   framework?: 'jest' | 'vitest' | 'unknown';
   timeoutMs?: number;
+  /** Injectable runner for tests. Defaults to spawning a shell command. */
+  runner?: CommandRunner;
 }): Promise<ExecutionResult> {
   const repoDir = opts.repoDir;
+  const run = opts.runner ?? runShell;
   const pm = detectPackageManager(repoDir);
   const framework = opts.framework === 'vitest' ? 'vitest' : 'jest';
   const start = Date.now();
@@ -59,7 +76,7 @@ export async function executeTests(opts: {
   const fullCommand = baseCmd.trim();
 
   if (opts.decision === 'FULL') {
-    const res = await runShell(fullCommand, repoDir, opts.timeoutMs);
+    const res = await run(fullCommand, repoDir, opts.timeoutMs);
     return {
       ran: true,
       exitCode: res.code,
@@ -68,6 +85,7 @@ export async function executeTests(opts: {
       testsExecuted: null,
       testsSkipped: 0,
       fellBackToFull: false,
+      failedTests: [],
     };
   }
 
@@ -82,11 +100,12 @@ export async function executeTests(opts: {
       testsExecuted: 0,
       testsSkipped: 0,
       fellBackToFull: false,
+      failedTests: [],
     };
   }
 
   const targetedCommand = `${baseCmd} ${opts.selectedTests.map(quote).join(' ')}`.trim();
-  const targeted = await runShell(targetedCommand, repoDir, opts.timeoutMs);
+  const targeted = await run(targetedCommand, repoDir, opts.timeoutMs);
 
   if (targeted.code === 0) {
     return {
@@ -97,11 +116,15 @@ export async function executeTests(opts: {
       testsExecuted: opts.selectedTests.length,
       testsSkipped: 0,
       fellBackToFull: false,
+      failedTests: [],
     };
   }
 
-  // Targeted execution failed: fall back to FULL (safety principle).
-  const fullRes = await runShell(fullCommand, repoDir, opts.timeoutMs);
+  // Targeted execution failed. Attribute the failure to specific tests (bounded,
+  // best-effort) so historical learning knows what actually broke, then fall
+  // back to FULL - the safety principle still wins over the diagnostic pass.
+  const failedTests = await attributeFailures(run, baseCmd, opts.selectedTests, repoDir, opts.timeoutMs);
+  const fullRes = await run(fullCommand, repoDir, opts.timeoutMs);
   return {
     ran: true,
     exitCode: fullRes.code,
@@ -110,7 +133,33 @@ export async function executeTests(opts: {
     testsExecuted: null,
     testsSkipped: 0,
     fellBackToFull: true,
+    failedTests,
   };
+}
+
+/**
+ * Re-run the selected tests one at a time to learn which of them failed.
+ * Returns [] when the batch is too large to probe (or nothing can be attributed),
+ * which callers treat as "unknown" and fall back to the coarse heuristic.
+ */
+async function attributeFailures(
+  run: CommandRunner,
+  baseCmd: string,
+  selectedTests: string[],
+  repoDir: string,
+  timeoutMs?: number,
+): Promise<string[]> {
+  if (selectedTests.length > MAX_ATTRIBUTION_RUNS) return [];
+  const failed: string[] = [];
+  for (const test of selectedTests) {
+    try {
+      const res = await run(`${baseCmd} ${quote(test)}`.trim(), repoDir, timeoutMs);
+      if (res.code !== 0) failed.push(test);
+    } catch {
+      return []; // attribution is best-effort; unknown beats wrong
+    }
+  }
+  return failed;
 }
 
 function quote(p: string): string {

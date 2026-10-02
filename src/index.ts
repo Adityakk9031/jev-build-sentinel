@@ -2,14 +2,17 @@ import * as core from '@actions/core';
 import * as github from '@actions/github';
 import { loadEventContext, resolveShas, repositoryFullName } from './github.js';
 import { buildChangeSet } from './diff.js';
-import { JevClient } from './jev-client.js';
+import { loadEnvFile } from './env.js';
+import { DEFAULT_ENDPOINT, DEFAULT_MODEL, JevClient } from './jev-client.js';
 import { runPipeline } from './pipeline.js';
 import { setOutputs, buildSummary } from './report.js';
-import { executeTests } from './executor.js';
-import { loadHistory, rememberOutcome } from './history.js';
+import { executeTests, shouldExecuteTests } from './executor.js';
+import { coChangeMap, loadHistory, rememberOutcome, saveHistory } from './history.js';
 
 async function run(): Promise<void> {
   try {
+    // Local .env supplies JEV_API_KEY/JEV_ENDPOINT/JEV_MODEL; real env vars win.
+    loadEnvFile();
     const ctx = loadEventContext();
     const shas = resolveShas(ctx);
     const repo = repositoryFullName(ctx);
@@ -42,18 +45,17 @@ async function run(): Promise<void> {
     // 2-4. Features, candidate tests, Jev request.
     const repoDir = core.getInput('working-directory') || '.';
     const jev = new JevClient({
-      endpoint: core.getInput('jev-endpoint', { required: true }),
-      apiKey: core.getInput('jev-api-key') || undefined,
+      endpoint: core.getInput('jev-endpoint') || process.env['JEV_ENDPOINT'] || DEFAULT_ENDPOINT,
+      apiKey: core.getInput('jev-api-key') || process.env['JEV_API_KEY'] || undefined,
+      model: core.getInput('jev-model') || process.env['JEV_MODEL'] || DEFAULT_MODEL,
       timeoutMs: Number(core.getInput('timeout-ms') || '10000'),
       retries: Number(core.getInput('retries') || '2'),
     });
 
     const historyFile = process.env['SENTINEL_HISTORY_FILE'];
     const history = historyFile ? loadHistory(historyFile) : { records: {} };
-    const historicalCoChanges = new Map<string, string[]>();
-    for (const [src, tests] of Object.entries(history.records)) {
-      historicalCoChanges.set(src, tests.map((t) => t.test));
-    }
+    // Ranked, filtered co-change candidates (sources need more than one clean observation).
+    const historicalCoChanges = coChangeMap(history);
 
     const result = await runPipeline({
       jev,
@@ -72,7 +74,11 @@ async function run(): Promise<void> {
 
     // 5. Outputs + job summary.
     setOutputs(core, decision, candidateTests.length);
-    const executionInput = core.getInput('execute-tests') === 'true';
+    const mode = core.getInput('mode') || 'decide';
+    if (mode !== 'decide' && mode !== 'execute') {
+      core.warning(`Unknown mode '${mode}' - expected 'decide' or 'execute'. Treating as 'decide'.`);
+    }
+    const executionInput = shouldExecuteTests(mode, core.getInput('execute-tests') === 'true');
     let execution;
     if (executionInput && decision.decision !== 'SKIP') {
       execution = await executeTests({
@@ -83,14 +89,24 @@ async function run(): Promise<void> {
       if (execution.fellBackToFull) {
         core.warning('Targeted execution was not possible - fell back to FULL suite.');
       }
+      if (execution.failedTests.length > 0) {
+        core.warning(`Failing tests: ${execution.failedTests.join(', ')}`);
+      }
     }
     core.summary.addRaw(buildSummary(decision, changeSet, features, candidateTests, execution));
     await core.summary.write();
 
     // Stage 9: record actual outcomes for historical learning when executing.
     if (executionInput && execution && historyFile) {
-      rememberOutcome(history, changeSet.files.map((f) => f.path), decision.selected_tests, execution);
-      void history; // persistence handled in rememberOutcome
+      rememberOutcome(
+        history,
+        changeSet.files.map((f) => f.path),
+        decision.selected_tests,
+        execution,
+        execution.failedTests,
+      );
+      saveHistory(historyFile, history);
+      core.info(`Updated test history at ${historyFile}`);
     }
   } catch (error) {
     if (error instanceof Error) {

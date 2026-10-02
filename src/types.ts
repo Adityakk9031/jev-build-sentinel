@@ -79,7 +79,7 @@ export interface BuildSentinelRequest {
   headSha: string;
   changedFiles: Array<Pick<ChangedFile, 'path' | 'changeType' | 'extension' | 'directory' | 'linesChanged'>>;
   features: AnalysisFeatures;
-  candidateTests: Array<Pick<CandidateTest, 'test' | 'reason' | 'confidence'>>;
+  candidateTests: Array<Pick<CandidateTest, 'test' | 'reason' | 'confidence'> & { source?: string }>;
   historicalMetadata?: {
     totalRecords: number;
     coChanges: Array<{ source: string; tests: string[]; occurrences: number }>;
@@ -113,4 +113,6 @@ export interface ExecutionResult {
   testsExecuted: number | null;
   testsSkipped: number;
   fellBackToFull: boolean;
+  /** Tests known to have failed during targeted execution; empty when unattributed. */
+  failedTests: string[];
 }

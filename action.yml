@@ -14,12 +14,17 @@ inputs:
     required: false
     default: ${{ github.token }}
   jev-endpoint:
-    description: 'Base URL of the Jev inference API (e.g. https://jev.example.com/v1).'
-    required: true
+    description: 'Base URL of the TypeSafe Jev API; POSTs to {endpoint}/systemone.'
+    required: false
+    default: 'https://api.typesafe.ai/v1'
   jev-api-key:
-    description: 'API key for the Jev inference API. Never logged.'
+    description: 'TypeSafe API key (Bearer). Never logged.'
     required: false
     default: ''
+  jev-model:
+    description: 'Jev model alias.'
+    required: false
+    default: 'jev-latest'
   mode:
     description: 'Operating mode: decide (default), or execute to also run the selected tests.'
     required: false

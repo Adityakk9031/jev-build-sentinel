@@ -29,7 +29,7 @@ function simulatedJev(req: BuildSentinelRequest): JevDecision {
       decision: 'TARGETED',
       risk_score: 0.28,
       confidence: 0.97,
-      selected_tests: req.candidateTests.slice(0, 5),
+      selected_tests: req.candidateTests.slice(0, 5).map((c) => c.test),
       reason: 'small, low-risk change with high-confidence test mapping',
     };
   }

@@ -8,6 +8,7 @@ import {
   saveHistory,
   rememberOutcome,
   getCoTests,
+  coChangeMap,
   type History,
 } from '../src/history.js';
 
@@ -64,5 +65,38 @@ describe('history learning', () => {
     const tests = Array.from({ length: 30 }, (_, i) => `t${i}.test.ts`);
     rememberOutcome(h, ['src/d.ts'], tests, { exitCode: 0, fellBackToFull: false });
     assert.equal(h.records['src/d.ts']!.length, 20);
+  });
+
+  test('attributed failures override the coarse fallback heuristic', () => {
+    const h: History = { records: {} };
+    rememberOutcome(
+      h,
+      ['src/e.ts'],
+      ['keep.test.ts', 'break.test.ts'],
+      { exitCode: 1, fellBackToFull: true },
+      ['break.test.ts'],
+    );
+    const bucket = h.records['src/e.ts']!;
+    assert.equal(bucket.find((r) => r.test === 'break.test.ts')!.failures, 1);
+    assert.equal(bucket.find((r) => r.test === 'keep.test.ts')!.failures, 0);
+  });
+
+  test('without attribution the fallback heuristic still marks everything failed', () => {
+    const h: History = { records: {} };
+    rememberOutcome(h, ['src/f.ts'], ['one.test.ts', 'two.test.ts'], { exitCode: 1, fellBackToFull: true });
+    for (const rec of h.records['src/f.ts']!) assert.equal(rec.failures, 1);
+  });
+
+  test('coChangeMap ranks qualifying sources and skips one-off observations', () => {
+    const h: History = { records: {} };
+    // Qualifies: selected twice and one failure.
+    rememberOutcome(h, ['src/g.ts'], ['flaky.test.ts', 'solid.test.ts'], { exitCode: 0, fellBackToFull: false });
+    rememberOutcome(h, ['src/g.ts'], ['flaky.test.ts', 'solid.test.ts'], { exitCode: 1, fellBackToFull: true }, ['flaky.test.ts']);
+    // One clean observation: not yet a standing candidate.
+    rememberOutcome(h, ['src/lonely.ts'], ['once.test.ts'], { exitCode: 0, fellBackToFull: false });
+
+    const map = coChangeMap(h);
+    assert.deepEqual(map.get('src/g.ts'), ['flaky.test.ts', 'solid.test.ts']);
+    assert.equal(map.has('src/lonely.ts'), false);
   });
 });

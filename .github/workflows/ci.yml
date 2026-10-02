@@ -1,0 +1,28 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - run: npm run build:check
+      - run: npm test
+      - run: npm run build
+      - name: dist bundle must be committed and current
+        run: |
+          if [ -n "$(git status --porcelain -- dist)" ]; then
+            echo "::error::dist/ is out of date. Run 'npm run build' and commit the result."
+            git status --porcelain -- dist
+            git diff --stat -- dist
+            exit 1
+          fi

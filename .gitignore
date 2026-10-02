@@ -1,4 +1,7 @@
 node_modules/
 build/
-dist/
 *.tsbuildinfo
+
+# Local secrets (TypeSafe API key)
+.env
+.env.local

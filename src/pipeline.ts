@@ -83,6 +83,7 @@ export async function runPipeline(deps: PipelineDeps): Promise<PipelineResult> {
     features,
     candidateTests: candidates.map((c) => ({
       test: c.test,
+      source: c.source,
       reason: c.reason,
       confidence: c.confidence,
     })),

@@ -44,8 +44,12 @@ export function rememberOutcome(
 ): void {
   for (const source of changedSources) {
     const bucket = (history.records[source] ??= []);
+    // Specific attribution beats the coarse "the fallback suite failed" heuristic.
+    const attributed = failedTests.length > 0;
     for (const test of selectedTests) {
-      const failed = failedTests.includes(test) || (execution.exitCode !== 0 && execution.fellBackToFull);
+      const failed = attributed
+        ? failedTests.includes(test)
+        : execution.exitCode !== 0 && execution.fellBackToFull;
       let entry = bucket.find((b) => b.test === test);
       if (!entry) {
         entry = { test, failures: 0, selections: 0, lastSeen: now };
@@ -67,4 +71,17 @@ export function getCoTests(history: History, source: string): string[] {
     .filter((r) => r.failures > 0 || r.selections > 1)
     .sort((a, b) => b.failures - a.failures || b.selections - a.selections)
     .map((r) => r.test);
+}
+
+/**
+ * Ranked co-change candidates for every learned source, ready to merge into the
+ * pipeline's candidate set. Sources with only one clean observation are skipped.
+ */
+export function coChangeMap(history: History): Map<string, string[]> {
+  const map = new Map<string, string[]>();
+  for (const source of Object.keys(history.records)) {
+    const tests = getCoTests(history, source);
+    if (tests.length > 0) map.set(source, tests);
+  }
+  return map;
 }

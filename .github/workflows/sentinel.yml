@@ -1,0 +1,24 @@
+name: Sentinel
+
+on: pull_request
+
+permissions:
+  contents: read
+  pull-requests: read
+
+jobs:
+  sentinel:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - id: sentinel
+        uses: ./
+        with:
+          # Falls back to FULL (never skips tests) when the secret is unavailable.
+          jev-api-key: ${{ secrets.JEV_API_KEY }}
+      - name: Report decision
+        run: |
+          echo "decision: ${{ steps.sentinel.outputs.decision }}"
+          echo "risk: ${{ steps.sentinel.outputs.risk_score }}"
+          echo "confidence: ${{ steps.sentinel.outputs.confidence }}"
+          echo "reason: ${{ steps.sentinel.outputs.reason }}"

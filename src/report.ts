@@ -97,6 +97,9 @@ export function buildSummary(
     lines.push(`Tests executed: ${execution.testsExecuted ?? 'n/a'}`);
     lines.push(`Tests skipped: ${execution.testsSkipped}`);
     if (execution.fellBackToFull) lines.push('Targeted execution failed - fell back to FULL suite');
+    if (execution.failedTests.length > 0) {
+      lines.push(`Failed tests: ${execution.failedTests.join(', ')}`);
+    }
     lines.push('```');
   }
 
