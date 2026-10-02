@@ -7,7 +7,7 @@
   "scripts": {
     "build": "tsc && ncc build build/index.js -o dist",
     "build:check": "tsc --noEmit",
-    "test": "node --test --import tsx 'tests/**/*.test.ts'",
+    "test": "node --test --import tsx tests/*.test.ts",
     "package": "ncc build build/index.js -o dist"
   },
   "keywords": [
