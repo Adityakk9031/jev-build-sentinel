@@ -11,3 +11,7 @@ demo-app/
 
 # Raw unedited footage
 New tab (1).mp4
+
+# OS files
+.DS_Store
+
