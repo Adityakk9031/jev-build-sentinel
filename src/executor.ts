@@ -19,6 +19,7 @@ export function tail(text: string, lines: number): string {
 const execAsync = promisify(exec);
 
 export type PackageManager = 'npm' | 'yarn' | 'pnpm' | 'bun';
+export type Framework = 'jest' | 'vitest' | 'unknown';
 
 /** Detect the package manager from lockfiles (never invents commands). */
 export function detectPackageManager(repoDir: string): PackageManager {
@@ -26,6 +27,31 @@ export function detectPackageManager(repoDir: string): PackageManager {
   if (fs.existsSync(path.join(repoDir, 'pnpm-lock.yaml'))) return 'pnpm';
   if (fs.existsSync(path.join(repoDir, 'yarn.lock'))) return 'yarn';
   return 'npm';
+}
+
+const VITEST_CONFIGS = ['vitest.config.ts', 'vitest.config.mts', 'vitest.config.js', 'vitest.config.mjs'];
+const JEST_CONFIGS = ['jest.config.ts', 'jest.config.js', 'jest.config.mjs', 'jest.config.cjs'];
+
+/**
+ * Detect the test framework from config files and package.json. Never assumes
+ * jest: a wrong default produces commands that match no tests (vitest exits
+ * "No test files found" and the suite silently doesn't run).
+ */
+export function detectFramework(repoDir: string): Framework {
+  let deps: Record<string, unknown> = {};
+  let testScript = '';
+  try {
+    const pkg = JSON.parse(fs.readFileSync(path.join(repoDir, 'package.json'), 'utf8'));
+    deps = { ...pkg.dependencies, ...pkg.devDependencies };
+    testScript = typeof pkg.scripts?.test === 'string' ? pkg.scripts.test : '';
+  } catch {
+    // no readable package.json - fall through to config-file checks
+  }
+  if ('vitest' in deps || VITEST_CONFIGS.some((f) => fs.existsSync(path.join(repoDir, f)))) return 'vitest';
+  if ('jest' in deps || JEST_CONFIGS.some((f) => fs.existsSync(path.join(repoDir, f)))) return 'jest';
+  if (testScript.includes('vitest')) return 'vitest';
+  if (testScript.includes('jest')) return 'jest';
+  return 'unknown';
 }
 
 function runCommand(pm: PackageManager): string {
@@ -39,10 +65,6 @@ function runCommand(pm: PackageManager): string {
     case 'bun':
       return 'bun test';
   }
-}
-
-function runScriptName(framework: 'jest' | 'vitest'): string {
-  return framework === 'vitest' ? 'vitest run' : 'jest';
 }
 
 /** Resolves the two overlapping execution inputs: `mode` and `execute-tests`. */
@@ -81,13 +103,13 @@ export async function executeTests(opts: {
   const log = opts.logger ?? ((msg: string) => core.info(msg));
   const seconds = (t0: number) => `${((Date.now() - t0) / 1000).toFixed(1)}s`;
   const pm = detectPackageManager(repoDir);
-  const framework = opts.framework === 'vitest' ? 'vitest' : 'jest';
+  const framework: Framework = opts.framework ?? detectFramework(repoDir);
   const start = Date.now();
 
+  // vitest/jest accept test file paths as positional filters; the generic
+  // npm-script fallback forwards them after `--` (npm ≥7 forwards bare args too).
   const baseCmd =
-    framework === 'vitest'
-      ? `npx vitest run`
-      : `${runCommand(pm)} ${runScriptName(framework)}`;
+    framework === 'vitest' ? 'npx vitest run' : framework === 'jest' ? 'npx jest' : runCommand(pm);
 
   const fullCommand = baseCmd.trim();
 

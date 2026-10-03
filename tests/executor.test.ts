@@ -3,7 +3,13 @@ import assert from 'node:assert/strict';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
-import { detectPackageManager, executeTests, shouldExecuteTests, MAX_ATTRIBUTION_RUNS } from '../src/executor.js';
+import {
+  detectPackageManager,
+  detectFramework,
+  executeTests,
+  shouldExecuteTests,
+  MAX_ATTRIBUTION_RUNS,
+} from '../src/executor.js';
 
 function mkRepo(files: string[]): string {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'sentinel-exec-'));
@@ -24,6 +30,39 @@ describe('package manager detection', () => {
   test('npm by default and from package-lock.json', () => {
     assert.equal(detectPackageManager(mkRepo([])), 'npm');
     assert.equal(detectPackageManager(mkRepo(['package-lock.json'])), 'npm');
+  });
+});
+
+describe('framework detection', () => {
+  test('vitest from devDependencies or config file', () => {
+    const withDep = mkRepo(['package.json']);
+    fs.writeFileSync(
+      path.join(withDep, 'package.json'),
+      JSON.stringify({ devDependencies: { vitest: '^2.1.0' } }),
+    );
+    assert.equal(detectFramework(withDep), 'vitest');
+    assert.equal(detectFramework(mkRepo(['vitest.config.ts'])), 'vitest');
+  });
+  test('jest from jest.config.js', () => {
+    assert.equal(detectFramework(mkRepo(['jest.config.js'])), 'jest');
+  });
+  test('unknown when package.json is empty and no config exists', () => {
+    assert.equal(detectFramework(mkRepo(['package.json'])), 'unknown');
+    assert.equal(detectFramework(mkRepo([])), 'unknown');
+  });
+  test('vitest repos run vitest, not a jest-named script', async () => {
+    const dir = mkRepo(['vitest.config.ts', 'package.json']);
+    const commands: string[] = [];
+    await executeTests({
+      repoDir: dir,
+      decision: 'FULL',
+      selectedTests: [],
+      runner: async (command) => {
+        commands.push(command);
+        return { code: 0, stdout: '', stderr: '' };
+      },
+    });
+    assert.equal(commands[0], 'npx vitest run');
   });
 });
 
