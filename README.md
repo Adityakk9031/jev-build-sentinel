@@ -1,38 +1,98 @@
 # Jev Build Sentinel
 
+[![CI](https://github.com/Adityakk9031/jev-build-sentinel/actions/workflows/ci.yml/badge.svg)](https://github.com/Adityakk9031/jev-build-sentinel/actions/workflows/ci.yml)
+
 A GitHub Action that determines the **minimum safe amount of CI verification** for a pull
-request — and automatically chooses full CI whenever it isn't confident.
+request — and automatically escalates to full CI whenever it isn't confident.
 
 > The story isn't "AI skips tests."
 > It's: **Jev is a low-latency CI decision engine that determines the minimum safe amount
-> of verification — and always escalates to full CI when uncertain.**
+> of verification — and a deterministic safety policy always escalates to full CI when
+> uncertain.**
 
-## Pipeline
+Measured on a real repo ([Adityakk9031/jev-demo](https://github.com/Adityakk9031/jev-demo),
+157 tests, full suite 2m37s):
+
+| Change | Sentinel decides | Runs | Wall time |
+| ------ | ---------------- | ---- | --------- |
+| One-line README edit | **SKIP** (risk 0, confidence 1) | 0 tests | **15s** |
+| 3 files in `src/payments/` | **TARGETED** (risk 0.78, confidence 0.95) | 15 tests | **0.9s** |
+| Database schema migration | **FULL** — forced by safety policy | 157 tests | **2m37s** |
+
+## Why
+
+Most CI runs everything for every PR. That means a typo fix pays the same tax as a schema
+migration — 2m37s of waiting before a human even looks at the code. The cost isn't the
+runtime, it's the latency between every push and every review.
+
+Sentinel asks one question per push: **how much verification does this change actually
+need?** Then it runs exactly that — nothing more, nothing less — and refuses to optimize
+when the change is genuinely risky.
+
+## How it works
 
 ```text
-PR
+PR opened
  ↓
-Git diff (src/diff.ts)          changed files, added/deleted/modified lines, renames
+Git diff (src/diff.ts)              changed files, added/deleted/modified lines, renames
  ↓
-Structured change set
- ↓
-Test mapper (src/test-mapper.ts)  Jest/Vitest naming conventions + import graph + proximity
- ↓
+Test mapper (src/test-mapper.ts)    Jest/Vitest naming conventions + import graph + proximity
+ ↓                                   + co-change history from past runs
 Candidate tests
  ↓
-Feature extractor (src/analyzer.ts)  deterministic risk features
+Feature extractor (src/analyzer.ts) deterministic risk features
  ↓
-Jev inference API (src/jev-client.ts)  SKIP | TARGETED | FULL
+Jev API (src/jev-client.ts)         one call, four atomic questions:
+                                      verification → SKIP | TARGETED | FULL + confidence
+                                      risk         → 0..1 score
+                                      regression_risk → guardrail (≥ 0.8 forces FULL)
+                                      test_0..N    → per-test keep scores (≥ 0.5 kept, cap 12)
  ↓
 Safety policy (src/risk-engine.ts)  "when uncertain, run more tests, never fewer"
  ↓
-Action outputs + job summary + optional execution (src/executor.ts)
+Outputs + job-summary receipt + optional execution (src/executor.ts)
 ```
 
-## Usage
+Jev never invents test paths — it only ranks candidates the local mapper produced. Answers
+are typed and validated before the policy sees them. If the API fails, times out, or
+returns low confidence, the deterministic rules take over and you get FULL.
+
+### The safety policy (hard rules, not suggestions)
+
+1. Jev confidence below threshold → **FULL**
+2. Jev says FULL → **FULL**
+3. Jev says TARGETED → run only the selected tests
+4. Jev says SKIP → skip the expensive suite
+5. High-risk changes always force **FULL** regardless of Jev: database migrations,
+   dependency/lockfile changes, CI configuration, Docker infrastructure,
+   authentication/security paths, core shared libraries
+6. TARGETED is never empty — falls back to locally mapped candidates, else FULL
+7. Jev API failure or timeout → **FULL**
+8. Jev `regression_risk` ≥ 0.8 → **FULL**
+
+The policy triggers are printed as a warning annotation and in the `reason` output, so
+every decision is explainable after the fact.
+
+### Execution, receipts, and learning
+
+With `execute-tests: true`, Sentinel runs what it chose and shows its work:
+
+- `▶ Executing TARGETED verification (3 test files): npx vitest run tests/payments/…`
+- `▶ TARGETED verification finished: exit 0 in 1.2s` — with the runner's own test summary
+- If a targeted batch fails, Sentinel re-runs the selected tests individually (bounded at
+  12 probes) to attribute failures, then **falls back to the full suite automatically**
+
+Every run also writes a job-summary receipt: decision, risk, confidence, policy triggers,
+change analysis, and the exact executed command.
+
+Frameworks are **detected, not assumed**: `vitest.config.*` or a `vitest` dependency →
+`npx vitest run`; `jest.config.*` or jest → `npx jest`; otherwise the repo's own
+`npm/yarn/pnpm/bun test` script. Package managers are detected from lockfiles.
+
+## Quick start
 
 ```yaml
-name: CI
+name: Sentinel
 on: pull_request
 
 jobs:
@@ -43,20 +103,38 @@ jobs:
       selected_tests: ${{ steps.sentinel.outputs.selected_tests }}
     steps:
       - uses: actions/checkout@v4
-      - id: sentinel
-        uses: jev/build-sentinel@v1
+      - uses: actions/setup-node@v4
         with:
-          jev-endpoint: https://api.typesafe.ai/v1
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - id: sentinel
+        uses: Adityakk9031/jev-build-sentinel@v1
+        with:
           jev-api-key: ${{ secrets.JEV_API_KEY }}
           execute-tests: 'true'
+          confidence-threshold: '0.7'
 
-  tests:
+  full-tests:
     needs: sentinel
     if: needs.sentinel.outputs.decision == 'FULL'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - run: npm test
+      - run: npm ci && npm test
+```
+
+Add `JEV_API_KEY` as a repository secret (Settings → Secrets and variables → Actions).
+
+### Conditional strategies
+
+Because `decision` is an output, you can gate downstream jobs on it:
+
+```yaml
+  e2e:
+    needs: sentinel
+    if: needs.sentinel.outputs.decision != 'SKIP'
+    # run expensive e2e only when something worth testing changed
 ```
 
 ### Inputs
@@ -68,15 +146,23 @@ jobs:
 | `jev-api-key` | — | TypeSafe API key (Bearer); never logged. Falls back to `JEV_API_KEY`. |
 | `jev-model` | `jev-latest` | Jev model alias. Falls back to `JEV_MODEL`. |
 | `mode` | `decide` | `decide` or `execute`; `execute` is equivalent to `execute-tests: true`. |
-| `execute-tests` | `false` | Also run the selected/normal tests. |
+| `execute-tests` | `false` | Also run the selected tests (TARGETED) or the normal suite (FULL). |
 | `confidence-threshold` | `0.7` | Below this Jev confidence, force FULL. |
 | `timeout-ms` | `10000` | Jev request timeout. |
-| `retries` | `2` | Retries on transient Jev failures. |
+| `retries` | `2` | Retries on transient Jev failures (408/429/5xx). |
 | `working-directory` | `.` | Repo root for mapping and execution. |
 
 ### Outputs
 
-`decision`, `risk_score`, `confidence`, `selected_tests`, `tests_skipped`, `reason`, `fallback_used`.
+| Output | Description |
+| ------ | ----------- |
+| `decision` | `SKIP`, `TARGETED`, or `FULL`. |
+| `risk_score` | Risk score returned by Jev (0..1). |
+| `confidence` | Decision confidence returned by Jev (0..1). |
+| `selected_tests` | Space-separated list of selected test files. |
+| `tests_skipped` | Number of candidate tests skipped. |
+| `reason` | Human-readable explanation of the decision. |
+| `fallback_used` | `true` when the safety policy overrode Jev or a fallback was applied. |
 
 ## Jev integration
 
@@ -89,82 +175,70 @@ Authorization: Bearer <JEV_API_KEY>
 ```
 
 `state` is the structured request the pipeline already builds (diff, features, mapped
-candidates, history). The questions are atomic and evaluated in parallel in one call:
-
-| Question id | Type | Feeds |
-| ----------- | ---- | ----- |
-| `verification` | choice: `SKIP` / `TARGETED` / `FULL` | decision + confidence |
-| `risk` | score: Negligible → Severe | `risk_score` (normalized to 0..1) |
-| `regression_risk` | noul | guardrail: noul ≥ 0.8 forces FULL |
-| `test_0`…`test_N` | noul, one per mapped candidate (capped at 12) | `selected_tests` (kept when noul ≥ 0.5) |
-
-No free text and no parsing: answers are typed and validated before the safety policy
-sees them, and Jev only ranks tests the local mapper produced — it never invents paths.
-
-For local runs put your key in `.env` (copy `.env.example`; `.env` is gitignored and
-real environment variables always win over it).
-
-## Safety policy
-
-Jev is the primary decision engine, but it is never blindly trusted:
-
-1. Jev confidence below threshold → **FULL**
-2. Jev says FULL → **FULL**
-3. Jev says TARGETED → run only selected tests
-4. Jev says SKIP → skip the expensive suite
-5. High-risk changes always force **FULL** regardless of Jev: database migrations,
-   dependency/lock changes, CI configuration, Docker infrastructure,
-   authentication/security paths, core shared libraries
-6. TARGETED is never empty — falls back to locally mapped candidates, else FULL
-7. Jev API failure or timeout → **FULL**
-8. Jev `regression_risk` noul ≥ 0.8 → **FULL** (guardrail applied in the client, before the policy)
+candidates, history). The questions are atomic and evaluated in parallel in one call —
+no free text, no parsing. For local runs put your key in `.env` (copy `.env.example`;
+`.env` is gitignored and real environment variables always win).
 
 ## Historical learning
 
-When execution is enabled (`mode: execute` or `execute-tests: true`) and
-`SENTINEL_HISTORY_FILE` points to a JSON file, Sentinel records which tests were
-selected — and, when a targeted batch fails, which of them actually failed — per
-changed source:
+When execution is enabled and `SENTINEL_HISTORY_FILE` points to a JSON file, Sentinel
+records which tests were selected — and, when a targeted batch fails, which of them
+actually failed — per changed source:
 
 ```json
 { "records": { "src/payments/stripe.ts": [{ "test": "tests/e2e/payment-refund.spec.ts", "failures": 2, "selections": 3, "lastSeen": "..." }] } }
 ```
 
-The file is written back after every run, so learning survives across CI jobs. When a
-selected test's batch fails, Sentinel re-runs the selection individually (bounded at 12
-probes) to attribute failures precisely instead of blaming everything.
+The file is written back after every run, so learning survives across CI jobs. On later
+runs a source's history becomes candidates again — ranked by failure weight — turning
+static selection into a repository-specific test-risk model.
 
-On later runs a source's history becomes candidates again — ranked by failure weight,
-and only once a link has been observed twice or has failed alongside the change —
-turning static selection into a repository-specific test-risk model.
+## Proof: the live demo
 
-## Local demo
+Everything above was validated end-to-end on
+[Adityakk9031/jev-demo](https://github.com/Adityakk9031/jev-demo) — a generated app with
+30 modules and 157 tests (150 unit + 7 slow e2e), wired to the real TypeSafe Jev API:
+
+- **SKIP** — docs-only PR: `Decision: SKIP (risk 0, confidence 1)`, green in 15s
+- **TARGETED** — 3 payment files: exactly 3 payment test files selected, `15 passed`,
+  `exit 0 in 1.2s`, regression risk 0.78 (just under the 0.8 escalation bar)
+- **FULL** — schema migration: annotation `Safety policy triggers: high-risk change:
+  database migration`, all 157 tests green in 156.1s
+
+The demo repo's workflow is 20 lines — the Quick Start above is almost exactly it.
+
+## Local development
 
 ```bash
 npm install
-npm test                # 111 unit tests
-npx tsx demo/offline-demo.ts readme        # SKIP
-npx tsx demo/offline-demo.ts notification # TARGETED (1 test)
-npx tsx demo/offline-demo.ts payment      # TARGETED + historical e2e test
-npx tsx demo/offline-demo.ts auth         # FULL (safety policy override)
-npx tsx demo/offline-demo.ts migration    # FULL (high-risk change)
-npx tsx demo/jev-live-demo.ts             # one real call to TypeSafe (uses .env)
-```
-
-## Development
-
-```bash
 npm run build:check   # strict TypeScript
+npm test              # 115 unit tests (node:test)
 npm run build         # tsc + ncc -> dist/index.js (the Action bundle)
-npm test              # node:test unit tests
+
+npx tsx demo/offline-demo.ts readme        # SKIP
+npx tsx demo/offline-demo.ts payment       # TARGETED + historical e2e test
+npx tsx demo/offline-demo.ts auth          # FULL (safety policy override)
+npx tsx demo/offline-demo.ts migration     # FULL (high-risk change)
+npx tsx demo/jev-live-demo.ts              # one real call to TypeSafe (uses .env)
 ```
 
-`dist/` is committed on purpose: it is the entrypoint `action.yml` runs. The CI
-workflow (`.github/workflows/ci.yml`) typechecks, tests, rebuilds, and fails if the
-committed bundle is stale; `.github/workflows/sentinel.yml` dogfoods this Action on
-every pull request.
+`dist/` is committed on purpose: it is the entrypoint `action.yml` runs. CI typechecks,
+tests, rebuilds, and fails if the committed bundle is ever stale;
+`.github/workflows/sentinel.yml` dogfoods this Action on every pull request.
 
 Architecture is strictly layered: `types.ts` (contracts) → `diff.ts` / `test-mapper.ts` /
 `analyzer.ts` (pure functions) → `jev-client.ts` / `risk-engine.ts` (decision) →
 `pipeline.ts` (orchestration) → `report.ts` / `executor.ts` / `history.ts` (effects) →
 `index.ts` (Action wiring).
+
+## Roadmap
+
+- [ ] Boxed PR comment with the decision, risk, and selected tests on every PR
+- [ ] `fail-on-test-failure` input (turn the job red when executed tests fail)
+- [ ] Suite-level skip accounting (`3 of 157 tests` in the receipt)
+- [ ] Learning loop via `actions/cache` (no artifact wiring needed)
+- [ ] More framework detectors (mocha, pytest, go test)
+
+## License
+
+MIT
