@@ -21,11 +21,11 @@ Measured on a real repo ([Adityakk9031/jev-demo](https://github.com/Adityakk9031
 
 ## Demo & Architecture Walkthrough
 
-[![Watch Jev Build Sentinel 2.5-Minute Demo Video](./docs/assets/demo-thumbnail.png)](https://github.com/Adityakk9031/jev-build-sentinel/releases/download/v1.0.0/jev-build-sentinel-demo.mp4)
+https://github.com/user-attachments/assets/8868f1de-2e94-4fa8-ad9a-0928fab9e1e5
 
 <p align="center">
   <a href="https://github.com/Adityakk9031/jev-build-sentinel/releases/download/v1.0.0/jev-build-sentinel-demo.mp4">
-    <img src="https://img.shields.io/badge/▶_Watch_Full_Demo_Video-1080p_•_2:50-blue?style=for-the-badge&logo=youtube&logoColor=white" alt="Watch Demo Video" />
+    <img src="https://img.shields.io/badge/▶_Download_Full_Video-1080p_•_2:50-blue?style=for-the-badge&logo=youtube&logoColor=white" alt="Download Demo Video" />
   </a>
   <a href="https://github.com/Adityakk9031/jev-build-sentinel/releases/tag/v1.0.0">
     <img src="https://img.shields.io/badge/📦_GitHub_Release-v1.0.0_Asset-green?style=for-the-badge&logo=github&logoColor=white" alt="GitHub Release" />
@@ -35,7 +35,7 @@ Measured on a real repo ([Adityakk9031/jev-demo](https://github.com/Adityakk9031
   </a>
 </p>
 
-### Live Execution Preview
+### Live Execution Highlights
 
 <p align="center">
   <img src="./docs/assets/demo-preview.gif" alt="Jev Build Sentinel Live Execution Preview" width="100%" />
