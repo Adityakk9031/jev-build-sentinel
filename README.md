@@ -19,17 +19,37 @@ Measured on a real repo ([Adityakk9031/jev-demo](https://github.com/Adityakk9031
 | 3 files in `src/payments/` | **TARGETED** (risk 0.78, confidence 0.95) | 15 tests | **0.9s** |
 | Database schema migration | **FULL** — forced by safety policy | 157 tests | **2m37s** |
 
-## Demo Video
+## Demo & Architecture Walkthrough
 
-https://github.com/Adityakk9031/jev-build-sentinel/raw/main/jev-build-sentinel-demo.mp4
+[![Watch Jev Build Sentinel 2.5-Minute Demo Video](./docs/assets/demo-thumbnail.png)](https://github.com/Adityakk9031/jev-build-sentinel/releases/download/v1.0.0/jev-build-sentinel-demo.mp4)
+
+<p align="center">
+  <a href="https://github.com/Adityakk9031/jev-build-sentinel/releases/download/v1.0.0/jev-build-sentinel-demo.mp4">
+    <img src="https://img.shields.io/badge/▶_Watch_Full_Demo_Video-1080p_•_2:50-blue?style=for-the-badge&logo=youtube&logoColor=white" alt="Watch Demo Video" />
+  </a>
+  <a href="https://github.com/Adityakk9031/jev-build-sentinel/releases/tag/v1.0.0">
+    <img src="https://img.shields.io/badge/📦_GitHub_Release-v1.0.0_Asset-green?style=for-the-badge&logo=github&logoColor=white" alt="GitHub Release" />
+  </a>
+  <a href="./docs/demo-video-script.md">
+    <img src="https://img.shields.io/badge/📝_Architecture_Script-Full_Transcript-purple?style=for-the-badge" alt="Script Transcript" />
+  </a>
+</p>
+
+### Live Execution Preview
+
+<p align="center">
+  <img src="./docs/assets/demo-preview.gif" alt="Jev Build Sentinel Live Execution Preview" width="100%" />
+</p>
 
 > [!TIP]
-> **Watch the 2.5-minute demo & architecture walkthrough ([`jev-build-sentinel-demo.mp4`](./jev-build-sentinel-demo.mp4))**:
-> - **5-Step Architecture**: PR diff &rarr; Test mapper (reverse import graph) &rarr; TypeSafe Jev API &rarr; Deterministic safety policy &rarr; Execution & receipts.
-> - **Live Proof**: Three real pull requests on [Adityakk9031/jev-demo](https://github.com/Adityakk9031/jev-demo) demonstrating **SKIP** (15s), **TARGETED** (15 tests in 1.2s), and **FULL** (157 tests in 2m37s).
-> - **Synced Narration & Highlights**: Real uncropped recording with word-level synced captions and pipeline stage badges.
->
-> *(Note: You can play the local file [`jev-build-sentinel-demo.mp4`](./jev-build-sentinel-demo.mp4), or upload it to a GitHub Release/Issue and replace the link above with GitHub's hosted asset URL).*
+> **What the 2.5-minute video shows ([`jev-build-sentinel-demo.mp4`](./jev-build-sentinel-demo.mp4) / [Release v1.0.0](https://github.com/Adityakk9031/jev-build-sentinel/releases/tag/v1.0.0))**:
+> - **End-to-End Pipeline**: PR diff &rarr; Test mapper (reverse import graph) &rarr; TypeSafe Jev API &rarr; Deterministic safety policy &rarr; Selective execution & receipts.
+> - **Live Proof on Real Pull Requests**:
+>   - **Take 1 (SKIP)**: Docs-only change &rarr; 0 tests run, CI passes in **15s** (was 2m37s).
+>   - **Take 2 (TARGETED)**: 3 payment files &rarr; only 15 relevant tests executed in **1.2s**.
+>   - **Take 3 (FULL)**: Database schema migration &rarr; Safety policy halts optimization and runs all 157 tests safely.
+> - **Full Sync**: Word-level neural subtitles + dynamic top pipeline stage badges over the native uncropped recording.
+
 
 ## Why
 
@@ -217,7 +237,7 @@ Everything above was validated end-to-end on
 - **FULL** — schema migration: annotation `Safety policy triggers: high-risk change:
   database migration`, all 157 tests green in 156.1s
 
-The demo repo's workflow is 20 lines — the Quick Start above is almost exactly it. See the [Demo Video](#demo-video) above for the complete visual walkthrough.
+The demo repo's workflow is 20 lines — the Quick Start above is almost exactly it. See the [Demo & Architecture Walkthrough](#demo--architecture-walkthrough) above for the complete visual walkthrough.
 
 ## Local development
 
