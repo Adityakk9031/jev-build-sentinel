@@ -1,8 +1,20 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
+import * as core from '@actions/core';
 import { exec } from 'node:child_process';
 import { promisify } from 'node:util';
 import type { ExecutionResult } from './types.js';
+
+/** Show the last N non-empty lines of command output in the Actions log. */
+export function tail(text: string, lines: number): string {
+  const cleaned = text
+    .split('\n')
+    .map((l) => l.replace(/\r/g, ''))
+    .filter((l) => l.trim() !== '');
+  if (cleaned.length === 0) return '(no output)';
+  const shown = cleaned.slice(-lines).join('\n');
+  return cleaned.length > lines ? `… (last ${lines} lines of output)\n${shown}` : shown;
+}
 
 const execAsync = promisify(exec);
 
@@ -61,9 +73,13 @@ export async function executeTests(opts: {
   timeoutMs?: number;
   /** Injectable runner for tests. Defaults to spawning a shell command. */
   runner?: CommandRunner;
+  /** Injectable logger; defaults to the GitHub Actions logger. */
+  logger?: (msg: string) => void;
 }): Promise<ExecutionResult> {
   const repoDir = opts.repoDir;
   const run = opts.runner ?? runShell;
+  const log = opts.logger ?? ((msg: string) => core.info(msg));
+  const seconds = (t0: number) => `${((Date.now() - t0) / 1000).toFixed(1)}s`;
   const pm = detectPackageManager(repoDir);
   const framework = opts.framework === 'vitest' ? 'vitest' : 'jest';
   const start = Date.now();
@@ -76,7 +92,10 @@ export async function executeTests(opts: {
   const fullCommand = baseCmd.trim();
 
   if (opts.decision === 'FULL') {
+    log(`▶ Executing FULL verification (all tests): ${fullCommand}`);
     const res = await run(fullCommand, repoDir, opts.timeoutMs);
+    log(`▶ FULL verification finished: exit ${res.code} in ${seconds(start)}`);
+    log(tail(res.code === 0 ? res.stdout : `${res.stdout}\n${res.stderr}`, 30));
     return {
       ran: true,
       exitCode: res.code,
@@ -105,7 +124,16 @@ export async function executeTests(opts: {
   }
 
   const targetedCommand = `${baseCmd} ${opts.selectedTests.map(quote).join(' ')}`.trim();
+  log(
+    `▶ Executing TARGETED verification (${opts.selectedTests.length} test files): ${targetedCommand}`,
+  );
   const targeted = await run(targetedCommand, repoDir, opts.timeoutMs);
+  log(`▶ TARGETED verification finished: exit ${targeted.code} in ${seconds(start)}`);
+  if (targeted.code !== 0) {
+    log(tail(`${targeted.stdout}\n${targeted.stderr}`, 40));
+  } else {
+    log(tail(targeted.stdout, 15));
+  }
 
   if (targeted.code === 0) {
     return {
@@ -123,8 +151,14 @@ export async function executeTests(opts: {
   // Targeted execution failed. Attribute the failure to specific tests (bounded,
   // best-effort) so historical learning knows what actually broke, then fall
   // back to FULL - the safety principle still wins over the diagnostic pass.
-  const failedTests = await attributeFailures(run, baseCmd, opts.selectedTests, repoDir, opts.timeoutMs);
+  log('▶ Targeted run failed - attributing failures by re-running selected tests individually.');
+  const failedTests = await attributeFailures(log, run, baseCmd, opts.selectedTests, repoDir, opts.timeoutMs);
+  log(`▶ Falling back to FULL suite: ${fullCommand}`);
   const fullRes = await run(fullCommand, repoDir, opts.timeoutMs);
+  log(`▶ FULL fallback finished: exit ${fullRes.code} in ${seconds(start)}`);
+  if (fullRes.code !== 0) {
+    log(tail(`${fullRes.stdout}\n${fullRes.stderr}`, 40));
+  }
   return {
     ran: true,
     exitCode: fullRes.code,
@@ -143,6 +177,7 @@ export async function executeTests(opts: {
  * which callers treat as "unknown" and fall back to the coarse heuristic.
  */
 async function attributeFailures(
+  log: (msg: string) => void,
   run: CommandRunner,
   baseCmd: string,
   selectedTests: string[],
@@ -154,6 +189,7 @@ async function attributeFailures(
   for (const test of selectedTests) {
     try {
       const res = await run(`${baseCmd} ${quote(test)}`.trim(), repoDir, timeoutMs);
+      log(`  ↳ ${test}: exit ${res.code}`);
       if (res.code !== 0) failed.push(test);
     } catch {
       return []; // attribution is best-effort; unknown beats wrong
@@ -175,6 +211,7 @@ async function runShell(
     const { stdout, stderr } = await execAsync(command, {
       cwd,
       timeout: timeoutMs ?? 20 * 60 * 1000,
+      maxBuffer: 16 * 1024 * 1024,
       env: { ...process.env, CI: 'true' },
     });
     return { code: 0, stdout, stderr };

@@ -32852,6 +32852,18 @@ var external_node_util_ = __nccwpck_require__(7975);
 
 
 
+
+/** Show the last N non-empty lines of command output in the Actions log. */
+function tail(text, lines) {
+    const cleaned = text
+        .split('\n')
+        .map((l) => l.replace(/\r/g, ''))
+        .filter((l) => l.trim() !== '');
+    if (cleaned.length === 0)
+        return '(no output)';
+    const shown = cleaned.slice(-lines).join('\n');
+    return cleaned.length > lines ? `… (last ${lines} lines of output)\n${shown}` : shown;
+}
 const execAsync = (0,external_node_util_.promisify)(external_node_child_process_namespaceObject.exec);
 /** Detect the package manager from lockfiles (never invents commands). */
 function detectPackageManager(repoDir) {
@@ -32893,6 +32905,8 @@ const MAX_ATTRIBUTION_RUNS = 12;
 async function executeTests(opts) {
     const repoDir = opts.repoDir;
     const run = opts.runner ?? runShell;
+    const log = opts.logger ?? ((msg) => core.info(msg));
+    const seconds = (t0) => `${((Date.now() - t0) / 1000).toFixed(1)}s`;
     const pm = detectPackageManager(repoDir);
     const framework = opts.framework === 'vitest' ? 'vitest' : 'jest';
     const start = Date.now();
@@ -32901,7 +32915,10 @@ async function executeTests(opts) {
         : `${runCommand(pm)} ${runScriptName(framework)}`;
     const fullCommand = baseCmd.trim();
     if (opts.decision === 'FULL') {
+        log(`▶ Executing FULL verification (all tests): ${fullCommand}`);
         const res = await run(fullCommand, repoDir, opts.timeoutMs);
+        log(`▶ FULL verification finished: exit ${res.code} in ${seconds(start)}`);
+        log(tail(res.code === 0 ? res.stdout : `${res.stdout}\n${res.stderr}`, 30));
         return {
             ran: true,
             exitCode: res.code,
@@ -32928,7 +32945,15 @@ async function executeTests(opts) {
         };
     }
     const targetedCommand = `${baseCmd} ${opts.selectedTests.map(quote).join(' ')}`.trim();
+    log(`▶ Executing TARGETED verification (${opts.selectedTests.length} test files): ${targetedCommand}`);
     const targeted = await run(targetedCommand, repoDir, opts.timeoutMs);
+    log(`▶ TARGETED verification finished: exit ${targeted.code} in ${seconds(start)}`);
+    if (targeted.code !== 0) {
+        log(tail(`${targeted.stdout}\n${targeted.stderr}`, 40));
+    }
+    else {
+        log(tail(targeted.stdout, 15));
+    }
     if (targeted.code === 0) {
         return {
             ran: true,
@@ -32944,8 +32969,14 @@ async function executeTests(opts) {
     // Targeted execution failed. Attribute the failure to specific tests (bounded,
     // best-effort) so historical learning knows what actually broke, then fall
     // back to FULL - the safety principle still wins over the diagnostic pass.
-    const failedTests = await attributeFailures(run, baseCmd, opts.selectedTests, repoDir, opts.timeoutMs);
+    log('▶ Targeted run failed - attributing failures by re-running selected tests individually.');
+    const failedTests = await attributeFailures(log, run, baseCmd, opts.selectedTests, repoDir, opts.timeoutMs);
+    log(`▶ Falling back to FULL suite: ${fullCommand}`);
     const fullRes = await run(fullCommand, repoDir, opts.timeoutMs);
+    log(`▶ FULL fallback finished: exit ${fullRes.code} in ${seconds(start)}`);
+    if (fullRes.code !== 0) {
+        log(tail(`${fullRes.stdout}\n${fullRes.stderr}`, 40));
+    }
     return {
         ran: true,
         exitCode: fullRes.code,
@@ -32962,13 +32993,14 @@ async function executeTests(opts) {
  * Returns [] when the batch is too large to probe (or nothing can be attributed),
  * which callers treat as "unknown" and fall back to the coarse heuristic.
  */
-async function attributeFailures(run, baseCmd, selectedTests, repoDir, timeoutMs) {
+async function attributeFailures(log, run, baseCmd, selectedTests, repoDir, timeoutMs) {
     if (selectedTests.length > MAX_ATTRIBUTION_RUNS)
         return [];
     const failed = [];
     for (const test of selectedTests) {
         try {
             const res = await run(`${baseCmd} ${quote(test)}`.trim(), repoDir, timeoutMs);
+            log(`  ↳ ${test}: exit ${res.code}`);
             if (res.code !== 0)
                 failed.push(test);
         }
@@ -32986,6 +33018,7 @@ async function runShell(command, cwd, timeoutMs) {
         const { stdout, stderr } = await execAsync(command, {
             cwd,
             timeout: timeoutMs ?? 20 * 60 * 1000,
+            maxBuffer: 16 * 1024 * 1024,
             env: { ...process.env, CI: 'true' },
         });
         return { code: 0, stdout, stderr };
