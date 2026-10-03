@@ -19,6 +19,18 @@ Measured on a real repo ([Adityakk9031/jev-demo](https://github.com/Adityakk9031
 | 3 files in `src/payments/` | **TARGETED** (risk 0.78, confidence 0.95) | 15 tests | **0.9s** |
 | Database schema migration | **FULL** — forced by safety policy | 157 tests | **2m37s** |
 
+## Demo Video
+
+https://github.com/Adityakk9031/jev-build-sentinel/raw/main/jev-build-sentinel-demo.mp4
+
+> [!TIP]
+> **Watch the 2.5-minute demo & architecture walkthrough ([`jev-build-sentinel-demo.mp4`](./jev-build-sentinel-demo.mp4))**:
+> - **5-Step Architecture**: PR diff &rarr; Test mapper (reverse import graph) &rarr; TypeSafe Jev API &rarr; Deterministic safety policy &rarr; Execution & receipts.
+> - **Live Proof**: Three real pull requests on [Adityakk9031/jev-demo](https://github.com/Adityakk9031/jev-demo) demonstrating **SKIP** (15s), **TARGETED** (15 tests in 1.2s), and **FULL** (157 tests in 2m37s).
+> - **Synced Narration & Highlights**: Real uncropped recording with word-level synced captions and pipeline stage badges.
+>
+> *(Note: You can play the local file [`jev-build-sentinel-demo.mp4`](./jev-build-sentinel-demo.mp4), or upload it to a GitHub Release/Issue and replace the link above with GitHub's hosted asset URL).*
+
 ## Why
 
 Most CI runs everything for every PR. That means a typo fix pays the same tax as a schema
@@ -205,7 +217,7 @@ Everything above was validated end-to-end on
 - **FULL** — schema migration: annotation `Safety policy triggers: high-risk change:
   database migration`, all 157 tests green in 156.1s
 
-The demo repo's workflow is 20 lines — the Quick Start above is almost exactly it.
+The demo repo's workflow is 20 lines — the Quick Start above is almost exactly it. See the [Demo Video](#demo-video) above for the complete visual walkthrough.
 
 ## Local development
 
